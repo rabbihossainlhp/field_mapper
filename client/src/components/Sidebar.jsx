@@ -1,4 +1,4 @@
-import { Bookmark, ChevronsLeft, ChevronsRight, Plus } from 'lucide-react';
+import { Bookmark, ChevronsLeft, ChevronsRight, Plus, Trash2 } from 'lucide-react';
 
 export default function Sidebar({
   parcels,
@@ -7,6 +7,7 @@ export default function Sidebar({
   isOpen,
   setIsOpen,
   onNewBoundary,
+  onDeleteParcel,
 }) {
   if (!isOpen) {
     return (
@@ -51,24 +52,38 @@ export default function Sidebar({
           {parcels.map((parcel) => {
             const isSelected = parcel.id === selectedId;
             return (
-              <button
+              <div
                 key={parcel.id}
-                onClick={() => onSelectParcel(parcel)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs transition-all ${
+                className={`flex items-center rounded-xl text-xs transition-all ${
                   isSelected
                     ? 'bg-emerald-400 text-slate-950 font-semibold shadow-md shadow-emerald-500/10'
                     : 'text-slate-300 hover:bg-slate-800/60'
                 }`}
               >
-                <span className="truncate">{parcel.name}</span>
-                <span
-                  className={`font-mono text-[11px] ${
-                    isSelected ? 'text-slate-900 font-bold' : 'text-emerald-400'
+                <button
+                  onClick={() => onSelectParcel(parcel)}
+                  className="flex min-w-0 flex-1 items-center justify-between px-3 py-2.5 text-left"
+                >
+                  <span className="truncate">{parcel.name}</span>
+                  <span
+                    className={`ml-2 shrink-0 font-mono text-[11px] ${
+                      isSelected ? 'text-slate-900 font-bold' : 'text-emerald-400'
+                    }`}
+                  >
+                    {parcel.acres.toFixed(1)} ac
+                  </span>
+                </button>
+                <button
+                  onClick={() => onDeleteParcel(parcel)}
+                  aria-label={`Delete ${parcel.name}`}
+                  title={`Delete ${parcel.name}`}
+                  className={`mr-1 rounded-lg p-2 transition hover:bg-red-500/20 hover:text-red-300 ${
+                    isSelected ? 'text-slate-900' : 'text-slate-400'
                   }`}
                 >
-                  {parcel.acres.toFixed(1)} ac
-                </span>
-              </button>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             );
           })}
         </div>

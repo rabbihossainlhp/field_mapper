@@ -10,6 +10,7 @@ export default function BottomInspector({
   onUndo,
   onReset,
   onSave,
+  locationName,
 }) {
   return (
     <div className="fixed bottom-4 left-72 right-24 z-20 flex justify-center pointer-events-none">
@@ -26,6 +27,19 @@ export default function BottomInspector({
               </span>
               <span className="text-sm font-medium text-slate-300">Acres</span>
             </div>
+            {locationName && (
+              <div
+                className="mt-1 max-w-xs truncate text-[11px] text-slate-400"
+                title={locationName}
+              >
+                {locationName}
+              </div>
+            )}
+            {locationName && (
+              <div className="text-[9px] text-slate-500">
+                Location data © OpenStreetMap contributors
+              </div>
+            )}
           </div>
 
           {/* Metric Pills */}

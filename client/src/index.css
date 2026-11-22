@@ -1,3 +1,24 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.maplibregl-ctrl-bottom-left {
+  left: 280px;
+  bottom: 260px;
+}
+
+.maplibregl-ctrl-scale {
+  border-color: #34d399 !important;
+  border-width: 0 2px 2px !important;
+  background: rgb(13 20 31 / 90%) !important;
+  color: #fff !important;
+  font: 600 11px/1.2 sans-serif !important;
+  padding: 3px 5px !important;
+}
+
+@media (max-width: 767px) {
+  .maplibregl-ctrl-bottom-left {
+    left: 12px;
+    bottom: 245px;
+  }
+}

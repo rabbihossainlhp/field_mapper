@@ -61,27 +61,43 @@ function createHandle(className, text) {
 export default function MapCanvas({
   parcel,
   isEditing,
+  isDetectMode,
   onDetect,
+  onMapClick,
   onGeojsonChange,
   zoom,
+  flyTarget,
 }) {
   const [mapReady, setMapReady] = useState(false);
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
+  const lastFittedIdRef = useRef(null);
   const parcelRef = useRef(parcel);
   const editingRef = useRef(isEditing);
+  const detectModeRef = useRef(isDetectMode);
   const detectRef = useRef(onDetect);
+  const mapClickRef = useRef(onMapClick);
   const geojsonChangeRef = useRef(onGeojsonChange);
   const zoomRef = useRef(zoom);
 
   useEffect(() => {
     parcelRef.current = parcel;
     editingRef.current = isEditing;
+    detectModeRef.current = isDetectMode;
     detectRef.current = onDetect;
+    mapClickRef.current = onMapClick;
     geojsonChangeRef.current = onGeojsonChange;
     zoomRef.current = zoom;
-  }, [parcel, isEditing, onDetect, onGeojsonChange, zoom]);
+  }, [
+    parcel,
+    isEditing,
+    isDetectMode,
+    onDetect,
+    onMapClick,
+    onGeojsonChange,
+    zoom,
+  ]);
 
   useEffect(() => {
     if (!mapContainerRef.current) return undefined;
@@ -115,7 +131,7 @@ export default function MapCanvas({
         ],
       },
       center,
-      zoom: 13 + (zoomRef.current - 1) * 10,
+      zoom: zoomRef.current,
       attributionControl: true,
     });
 
@@ -123,9 +139,15 @@ export default function MapCanvas({
       new maplibregl.NavigationControl({ visualizePitch: true }),
       'bottom-right'
     );
+    map.addControl(
+      new maplibregl.ScaleControl({ maxWidth: 120, unit: 'metric' }),
+      'bottom-left'
+    );
     map.on('click', (event) => {
-      if (!editingRef.current) {
+      if (detectModeRef.current) {
         detectRef.current(event.lngLat.lat, event.lngLat.lng);
+      } else if (!editingRef.current) {
+        mapClickRef.current?.(event.lngLat.lat, event.lngLat.lng);
       }
     });
 
@@ -155,6 +177,7 @@ export default function MapCanvas({
           [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
           { padding: 100, maxZoom: 17, duration: 600 }
         );
+        lastFittedIdRef.current = parcelRef.current?.id;
       }
       setMapReady(true);
     });
@@ -181,11 +204,14 @@ export default function MapCanvas({
     );
     if (!feature) return;
 
-    const bounds = turf.bbox(feature);
-    map.fitBounds(
-      [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
-      { padding: 100, maxZoom: 17, duration: 500 }
-    );
+    if (parcel?.id !== lastFittedIdRef.current) {
+      const bounds = turf.bbox(feature);
+      map.fitBounds(
+        [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
+        { padding: 100, maxZoom: 17, duration: 500 }
+      );
+      lastFittedIdRef.current = parcel?.id;
+    }
     if (!isEditing) return;
 
     const ring = openRing(feature);
@@ -237,8 +263,17 @@ export default function MapCanvas({
   }, [parcel, isEditing, mapReady]);
 
   useEffect(() => {
-    mapRef.current?.setZoom(13 + (zoom - 1) * 10);
+    mapRef.current?.setZoom(zoom);
   }, [zoom]);
+
+  useEffect(() => {
+    if (!flyTarget) return;
+    mapRef.current?.flyTo({
+      center: [flyTarget.lng, flyTarget.lat],
+      zoom: flyTarget.zoom || 16,
+      essential: true,
+    });
+  }, [flyTarget]);
 
   return (
     <div

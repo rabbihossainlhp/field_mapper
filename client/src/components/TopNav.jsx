@@ -1,6 +1,13 @@
 import { MapPin, Search, Layers, Compass, User, ArrowLeftRight } from 'lucide-react';
 
-export default function TopNav({ activeTab, setActiveTab, searchQuery, setSearchQuery }) {
+export default function TopNav({
+  activeTab,
+  setActiveTab,
+  searchQuery,
+  setSearchQuery,
+  onSearch,
+  locationName,
+}) {
   const navTabs = ['Map', 'Editor', 'Layers', 'Telemetry'];
 
   return (
@@ -11,15 +18,33 @@ export default function TopNav({ activeTab, setActiveTab, searchQuery, setSearch
           <MapPin className="w-4 h-4 text-emerald-400" />
           <span className="text-white font-semibold text-sm tracking-tight">FieldBoundary</span>
         </div>
+        {locationName && (
+          <div
+            title={locationName}
+            className="absolute left-0 top-[3.6rem] max-w-[370px] truncate rounded-full border border-slate-800 bg-[#0f1722]/90 px-3 py-1.5 text-[11px] text-slate-200 shadow-lg pointer-events-auto"
+          >
+            <MapPin className="mr-1 inline h-3 w-3 text-emerald-400" />
+            {locationName}
+          </div>
+        )}
         <div className="flex items-center gap-2 pl-3 flex-1">
           <Search className="w-3.5 h-3.5 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search parcels, coordinates, APN..."
-            className="bg-transparent text-xs text-slate-200 placeholder-slate-400 focus:outline-none w-full"
-          />
+          <form
+            className="flex-1"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSearch();
+            }}
+          >
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search places or lat, lng..."
+              aria-label="Search fields, places, or coordinates"
+              className="bg-transparent text-xs text-slate-200 placeholder-slate-400 focus:outline-none w-full"
+            />
+          </form>
         </div>
       </div>
 
