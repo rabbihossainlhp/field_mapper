@@ -82,24 +82,29 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isEditing, setIsEditing] = useState(true);
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const [showPlaceLabels, setShowPlaceLabels] = useState(true);
   const [zoom, setZoom] = useState(16);
   const [toast, setToast] = useState(null);
   const [isDetectMode, setIsDetectMode] = useState(false);
   const [flyTarget, setFlyTarget] = useState(null);
+  const [searchedLocationName, setSearchedLocationName] = useState('');
+
   const toastTimer = useRef(null);
   const parcelsRef = useRef(parcels);
   const lookedUpParcelIdsRef = useRef(new Set());
-  const [searchedLocationName, setSearchedLocationName] = useState('');
 
   const activeParcel = parcels.find((parcel) => parcel.id === selectedId) || parcels[0];
-  const activeParcelId = activeParcel?.id;
-  const activeParcelLocationName = activeParcel?.locationName;
-  const activeParcelGeojson = activeParcel?.geojson;
-  const activeParcelVertices = activeParcel?.vertices;
+  const activeFeature = getParcelFeature(activeParcel);
+  const activeCenter = activeFeature
+    ? turf.center(activeFeature).geometry.coordinates
+    : DEMO_CENTER;
+  const fallbackCoordLabel = `${activeCenter[1].toFixed(4)}, ${activeCenter[0].toFixed(4)}`;
+
   const activeLocationName =
-    activeParcel?.locationName ||
     searchedLocationName ||
-    (getParcelFeature(activeParcel) ? 'Looking up location…' : '');
+    activeParcel?.locationName ||
+    fallbackCoordLabel;
 
   useEffect(() => {
     parcelsRef.current = parcels;
@@ -108,7 +113,7 @@ export default function App() {
   const triggerToast = (message) => {
     setToast(message);
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2500);
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
   };
 
   useEffect(() => {
@@ -133,42 +138,29 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!activeParcelId || activeParcelLocationName) return;
-    if (lookedUpParcelIdsRef.current.has(activeParcelId)) return;
+    if (!activeParcel?.id || activeParcel.locationName) return;
+    if (lookedUpParcelIdsRef.current.has(activeParcel.id)) return;
 
-    const feature = getParcelFeature({
-      id: activeParcelId,
-      geojson: activeParcelGeojson,
-      vertices: activeParcelVertices,
-    });
+    const feature = getParcelFeature(activeParcel);
     if (!feature) return;
-    lookedUpParcelIdsRef.current.add(activeParcelId);
+
+    lookedUpParcelIdsRef.current.add(activeParcel.id);
     const [lng, lat] = turf.center(feature).geometry.coordinates;
+
     reverseGeocode(lat, lng)
-      .then((locationName) => {
+      .then((label) => {
         setParcels((previous) =>
           previous.map((parcel) =>
-            parcel.id === activeParcelId
-              ? { ...parcel, locationName: locationName || 'No nearby place name found' }
+            parcel.id === activeParcel.id
+              ? { ...parcel, locationName: label }
               : parcel
           )
         );
       })
       .catch(() => {
-        setParcels((previous) =>
-          previous.map((parcel) =>
-            parcel.id === activeParcelId
-              ? { ...parcel, locationName: 'Location lookup unavailable' }
-              : parcel
-          )
-        );
+        lookedUpParcelIdsRef.current.delete(activeParcel.id);
       });
-  }, [
-    activeParcelId,
-    activeParcelLocationName,
-    activeParcelGeojson,
-    activeParcelVertices,
-  ]);
+  }, [activeParcel]);
 
   const handleUpdateField = (key, value) => {
     setParcels((previous) =>
@@ -189,28 +181,18 @@ export default function App() {
   };
 
   const updateLocationName = async (id, lat, lng) => {
+    const coordFallback = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     try {
-      const locationName = await reverseGeocode(lat, lng);
-      lookedUpParcelIdsRef.current.add(id);
+      const label = await reverseGeocode(lat, lng);
+      const displayLabel = label ? `${label} (${coordFallback})` : coordFallback;
+      setSearchedLocationName(displayLabel);
       setParcels((previous) =>
         previous.map((parcel) =>
-          parcel.id === id
-            ? {
-                ...parcel,
-                locationName: locationName || 'No nearby place name found',
-              }
-            : parcel
+          parcel.id === id ? { ...parcel, locationName: displayLabel } : parcel
         )
       );
-    } catch (error) {
-      setParcels((previous) =>
-        previous.map((parcel) =>
-          parcel.id === id
-            ? { ...parcel, locationName: 'Location lookup unavailable' }
-            : parcel
-        )
-      );
-      triggerToast(error.message || 'Could not look up location name');
+    } catch {
+      setSearchedLocationName(coordFallback);
     }
   };
 
@@ -240,7 +222,8 @@ export default function App() {
       setSelectedId(draft.id);
       setIsDetectMode(false);
       setIsEditing(true);
-      triggerToast('Boundary detected; adjust it before saving');
+      updateLocationName(draft.id, lat, lng);
+      triggerToast('Boundary detected; drag white vertices to adjust');
     } catch (error) {
       triggerToast(error.message || 'Boundary detection failed');
     }
@@ -250,7 +233,7 @@ export default function App() {
     setSearchedLocationName('');
     setIsDetectMode(true);
     setIsEditing(false);
-    triggerToast('Tap a field on the map to detect its boundary');
+    triggerToast('Tap any field on the map to detect its boundary');
   };
 
   const handleSelectParcel = (parcel) => {
@@ -271,12 +254,10 @@ export default function App() {
       setZoom(16);
       reverseGeocode(coordinates.lat, coordinates.lng)
         .then((label) => {
-          setSearchedLocationName(label || 'No nearby place name found');
-          triggerToast(label || 'No nearby place name found');
+          setSearchedLocationName(label);
+          triggerToast(label);
         })
-        .catch((error) =>
-          triggerToast(error.message || 'Moved to coordinates; location lookup failed')
-        );
+        .catch(() => triggerToast('Moved to coordinates'));
       return;
     }
 
@@ -307,7 +288,9 @@ export default function App() {
   };
 
   const handleMapClick = (lat, lng) => {
-    updateLocationName(activeParcel.id, lat, lng);
+    if (activeParcel) {
+      updateLocationName(activeParcel.id, lat, lng);
+    }
   };
 
   const handleLocate = () => {
@@ -321,8 +304,8 @@ export default function App() {
         setZoom(16);
         reverseGeocode(coords.latitude, coords.longitude)
           .then((label) => {
-            setSearchedLocationName(label || 'Your current location');
-            triggerToast(label || 'Moved to your current location');
+            setSearchedLocationName(label);
+            triggerToast(label);
           })
           .catch(() => triggerToast('Moved to your current location'));
       },
@@ -393,13 +376,13 @@ export default function App() {
       const payload = {
         name: activeParcel.customTitle.trim(),
         category: activeParcel.crop,
+        locationName: activeParcel.locationName || activeLocationName,
         geojson: activeParcel.geojson,
       };
       const saved = activeParcel.isSaved
         ? await fieldApi.updateParcel(activeParcel.id, payload)
         : await fieldApi.createParcel(payload);
       const mapped = mapBackendParcel(saved);
-      mapped.locationName = activeParcel.locationName;
       setParcels((previous) =>
         previous.map((parcel) =>
           parcel.id === activeParcel.id ? mapped : parcel
@@ -440,6 +423,8 @@ export default function App() {
           parcel={activeParcel}
           isEditing={isEditing}
           isDetectMode={isDetectMode}
+          isMeasuring={isMeasuring}
+          showPlaceLabels={showPlaceLabels}
           onDetect={handleDetect}
           onMapClick={handleMapClick}
           onGeojsonChange={handleGeojsonChange}
@@ -467,6 +452,10 @@ export default function App() {
         onZoomIn={() => setZoom((value) => Math.min(19, value + 1))}
         onZoomOut={() => setZoom((value) => Math.max(3, value - 1))}
         onLocate={handleLocate}
+        isMeasuring={isMeasuring}
+        onToggleMeasure={() => setIsMeasuring((prev) => !prev)}
+        showPlaceLabels={showPlaceLabels}
+        onTogglePlaceLabels={() => setShowPlaceLabels((prev) => !prev)}
       />
       {toast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-emerald-400 text-slate-950 text-xs font-bold shadow-xl">

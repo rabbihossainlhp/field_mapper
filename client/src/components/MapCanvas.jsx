@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 const DEFAULT_CENTER = [90.412, 23.81];
 const BOUNDARY_SOURCE = 'field-boundary';
+const MEASURE_SOURCE = 'measure-scale-line';
 
 function featureFromParcel(parcel) {
   if (parcel?.geojson) {
@@ -54,7 +55,7 @@ function createHandle(className, text) {
   element.className = className;
   element.textContent = text;
   element.style.cssText =
-    'display:flex;align-items:center;justify-content:center;border-radius:9999px;cursor:pointer;box-shadow:0 2px 8px #0008;';
+    'display:flex;align-items:center;justify-content:center;border-radius:9999px;cursor:grab;box-shadow:0 3px 12px rgba(0,0,0,0.75);z-index:15;';
   return element;
 }
 
@@ -62,6 +63,8 @@ export default function MapCanvas({
   parcel,
   isEditing,
   isDetectMode,
+  isMeasuring,
+  showPlaceLabels = true,
   onDetect,
   onMapClick,
   onGeojsonChange,
@@ -69,12 +72,16 @@ export default function MapCanvas({
   flyTarget,
 }) {
   const [mapReady, setMapReady] = useState(false);
+  const [measureDistance, setMeasureDistance] = useState(null);
+
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
+  const measureMarkersRef = useRef([]);
+  const measurePointsRef = useRef(null);
   const lastFittedIdRef = useRef(null);
+
   const parcelRef = useRef(parcel);
-  const editingRef = useRef(isEditing);
   const detectModeRef = useRef(isDetectMode);
   const detectRef = useRef(onDetect);
   const mapClickRef = useRef(onMapClick);
@@ -83,22 +90,14 @@ export default function MapCanvas({
 
   useEffect(() => {
     parcelRef.current = parcel;
-    editingRef.current = isEditing;
     detectModeRef.current = isDetectMode;
     detectRef.current = onDetect;
     mapClickRef.current = onMapClick;
     geojsonChangeRef.current = onGeojsonChange;
     zoomRef.current = zoom;
-  }, [
-    parcel,
-    isEditing,
-    isDetectMode,
-    onDetect,
-    onMapClick,
-    onGeojsonChange,
-    zoom,
-  ]);
+  }, [parcel, isDetectMode, onDetect, onMapClick, onGeojsonChange, zoom]);
 
+  // Initialize MapLibre + Satellite Imagery + Place Labels Overlay
   useEffect(() => {
     if (!mapContainerRef.current) return undefined;
 
@@ -106,6 +105,7 @@ export default function MapCanvas({
     const center = feature
       ? turf.center(feature).geometry.coordinates
       : DEFAULT_CENTER;
+
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       style: {
@@ -119,7 +119,17 @@ export default function MapCanvas({
             tileSize: 256,
             maxzoom: 19,
             attribution:
-              'Tiles © Esri — Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+              'Tiles © Esri | Labels © Carto / OpenStreetMap',
+          },
+          'carto-labels-only': {
+            type: 'raster',
+            tiles: [
+              'https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}@2x.png',
+              'https://b.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}@2x.png',
+              'https://c.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}@2x.png',
+            ],
+            tileSize: 256,
+            maxzoom: 19,
           },
         },
         layers: [
@@ -127,6 +137,12 @@ export default function MapCanvas({
             id: 'esri-world-imagery',
             type: 'raster',
             source: 'esri-world-imagery',
+          },
+          {
+            id: 'carto-labels-layer',
+            type: 'raster',
+            source: 'carto-labels-only',
+            paint: { 'raster-opacity': 0.92 },
           },
         ],
       },
@@ -136,17 +152,14 @@ export default function MapCanvas({
     });
 
     map.addControl(
-      new maplibregl.NavigationControl({ visualizePitch: true }),
-      'bottom-right'
-    );
-    map.addControl(
       new maplibregl.ScaleControl({ maxWidth: 120, unit: 'metric' }),
       'bottom-left'
     );
+
     map.on('click', (event) => {
       if (detectModeRef.current) {
         detectRef.current(event.lngLat.lat, event.lngLat.lng);
-      } else if (!editingRef.current) {
+      } else {
         mapClickRef.current?.(event.lngLat.lat, event.lngLat.lng);
       }
     });
@@ -160,7 +173,7 @@ export default function MapCanvas({
         id: 'field-boundary-fill',
         type: 'fill',
         source: BOUNDARY_SOURCE,
-        paint: { 'fill-color': '#34d399', 'fill-opacity': 0.18 },
+        paint: { 'fill-color': '#34d399', 'fill-opacity': 0.2 },
         filter: ['==', '$type', 'Polygon'],
       });
       map.addLayer({
@@ -169,6 +182,21 @@ export default function MapCanvas({
         source: BOUNDARY_SOURCE,
         paint: { 'line-color': '#34d399', 'line-width': 3 },
         filter: ['==', '$type', 'Polygon'],
+      });
+
+      map.addSource(MEASURE_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'measure-scale-line-layer',
+        type: 'line',
+        source: MEASURE_SOURCE,
+        paint: {
+          'line-color': '#fbbf24',
+          'line-width': 3.5,
+          'line-dasharray': [2, 1.5],
+        },
       });
 
       if (feature) {
@@ -186,11 +214,25 @@ export default function MapCanvas({
     return () => {
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
+      measureMarkersRef.current.forEach((marker) => marker.remove());
+      measureMarkersRef.current = [];
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
+  // Toggle place names label layer visibility
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map?.getLayer('carto-labels-layer')) return;
+    map.setLayoutProperty(
+      'carto-labels-layer',
+      'visibility',
+      showPlaceLabels ? 'visible' : 'none'
+    );
+  }, [showPlaceLabels, mapReady]);
+
+  // Render active parcel polygon & draggable vertices
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map?.isStyleLoaded() || !map.getSource(BOUNDARY_SOURCE)) return;
@@ -222,10 +264,7 @@ export default function MapCanvas({
     };
 
     ring.forEach(([lng, lat], index) => {
-      const vertex = createHandle(
-        'field-map-vertex',
-        ''
-      );
+      const vertex = createHandle('field-map-vertex', '');
       vertex.setAttribute('aria-label', `Move boundary point ${index + 1}`);
       vertex.title = 'Drag to adjust boundary';
       vertex.style.cssText +=
@@ -247,7 +286,7 @@ export default function MapCanvas({
       addButton.setAttribute('aria-label', 'Add boundary point');
       addButton.title = 'Add a boundary point';
       addButton.style.cssText +=
-        'width:24px;height:24px;padding:0;color:#34d399;background:#0f172a;border:1px solid #475569;font-size:18px;line-height:1;';
+        'width:24px;height:24px;padding:0;color:#34d399;background:#0f172a;border:1px solid #475569;font-size:18px;line-height:1;cursor:pointer;';
       addButton.addEventListener('click', (event) => {
         event.stopPropagation();
         const currentRing = openRing(feature);
@@ -261,6 +300,78 @@ export default function MapCanvas({
       );
     });
   }, [parcel, isEditing, mapReady]);
+
+  // Render & update Draggable 2-Point Measurement Scale (Pins A & B)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map?.isStyleLoaded() || !map.getSource(MEASURE_SOURCE)) return;
+
+    measureMarkersRef.current.forEach((marker) => marker.remove());
+    measureMarkersRef.current = [];
+
+    if (!isMeasuring) {
+      map.getSource(MEASURE_SOURCE).setData({
+        type: 'FeatureCollection',
+        features: [],
+      });
+      measurePointsRef.current = null;
+      return;
+    }
+
+    const center = map.getCenter();
+    const initialPoints = [
+      [center.lng - 0.0012, center.lat],
+      [center.lng + 0.0012, center.lat],
+    ];
+    measurePointsRef.current = initialPoints;
+
+    const syncMeasureLine = () => {
+      const pts = measurePointsRef.current;
+      if (!pts || !map.getSource(MEASURE_SOURCE)) return;
+
+      map.getSource(MEASURE_SOURCE).setData({
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'LineString',
+          coordinates: pts,
+        },
+      });
+
+      const meters = turf.distance(turf.point(pts[0]), turf.point(pts[1]), {
+        units: 'meters',
+      });
+      setMeasureDistance({
+        meters: Math.round(meters),
+        feet: Math.round(meters * 3.28084),
+        km: (meters / 1000).toFixed(2),
+      });
+    };
+
+    initialPoints.forEach((lngLat, idx) => {
+      const pin = createHandle('measure-scale-pin', idx === 0 ? 'A' : 'B');
+      pin.title = `Drag pin ${idx === 0 ? 'A' : 'B'} to measure distance`;
+      pin.style.cssText +=
+        'width:30px;height:30px;background:#fbbf24;color:#0f172a;font-weight:800;font-size:12px;border:2.5px solid #ffffff;';
+
+      const marker = new maplibregl.Marker({ element: pin, draggable: true })
+        .setLngLat(lngLat)
+        .addTo(map);
+
+      const handleMove = () => {
+        const pos = marker.getLngLat();
+        measurePointsRef.current[idx] = [pos.lng, pos.lat];
+        syncMeasureLine();
+      };
+
+      marker.on('drag', handleMove);
+      marker.on('dragend', handleMove);
+
+      measureMarkersRef.current.push(marker);
+    });
+
+    syncMeasureLine();
+  }, [isMeasuring, mapReady]);
 
   useEffect(() => {
     mapRef.current?.setZoom(zoom);
@@ -276,9 +387,31 @@ export default function MapCanvas({
   }, [flyTarget]);
 
   return (
-    <div
-      ref={mapContainerRef}
-      className="absolute inset-0 h-screen w-full bg-slate-900"
-    />
+    <div className="relative h-screen w-full">
+      <div
+        ref={mapContainerRef}
+        className="absolute inset-0 h-screen w-full bg-slate-900"
+      />
+
+      {/* Live Draggable Scale Readout Pill */}
+      {isMeasuring && measureDistance && (
+        <div className="fixed top-20 right-4 z-30 rounded-2xl border border-amber-400/60 bg-[#0d141f]/95 px-4 py-2.5 text-xs text-white shadow-2xl backdrop-blur-md">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+            Drag Pin A or B to Measure
+          </div>
+          <div className="mt-0.5 flex items-baseline gap-2 font-mono text-sm font-bold">
+            <span>{measureDistance.meters.toLocaleString()} m</span>
+            <span className="text-slate-400">•</span>
+            <span className="text-slate-300">{measureDistance.feet.toLocaleString()} ft</span>
+            {measureDistance.meters >= 1000 && (
+              <>
+                <span className="text-slate-400">•</span>
+                <span className="text-amber-300">{measureDistance.km} km</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

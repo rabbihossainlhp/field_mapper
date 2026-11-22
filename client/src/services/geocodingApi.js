@@ -1,30 +1,5 @@
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org';
-const MIN_REQUEST_INTERVAL_MS = 1100;
-
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const responseCache = new Map();
-let requestQueue = Promise.resolve();
-let lastRequestAt = 0;
-
-function fetchNominatim(url) {
-  const request = requestQueue.then(async () => {
-    const delay = MIN_REQUEST_INTERVAL_MS - (Date.now() - lastRequestAt);
-    if (delay > 0) {
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-    lastRequestAt = Date.now();
-
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json' },
-    });
-    if (!response.ok) {
-      throw new Error(`Location lookup failed (${response.status})`);
-    }
-    return response.json();
-  });
-
-  requestQueue = request.catch(() => {});
-  return request;
-}
 
 export async function searchLocation(query) {
   const normalizedQuery = query.trim();
@@ -33,29 +8,34 @@ export async function searchLocation(query) {
   const cacheKey = `search:${normalizedQuery.toLowerCase()}`;
   if (responseCache.has(cacheKey)) return responseCache.get(cacheKey);
 
-  const params = new URLSearchParams({
-    format: 'jsonv2',
-    limit: '5',
-    q: normalizedQuery,
-  });
-  const results = await fetchNominatim(`${NOMINATIM_URL}/search?${params}`);
-  responseCache.set(cacheKey, results);
-  return results;
+  const params = new URLSearchParams({ q: normalizedQuery });
+  const response = await fetch(`${API_BASE}/fields/geocode/search?${params}`);
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Place search failed');
+  }
+
+  responseCache.set(cacheKey, data);
+  return data;
 }
 
 export async function reverseGeocode(lat, lng) {
-  const cacheKey = `reverse:${lat.toFixed(4)},${lng.toFixed(4)}`;
+  const cacheKey = `reverse:${Number(lat).toFixed(4)},${Number(lng).toFixed(4)}`;
   if (responseCache.has(cacheKey)) return responseCache.get(cacheKey);
 
   const params = new URLSearchParams({
-    format: 'jsonv2',
     lat: String(lat),
-    lon: String(lng),
-    zoom: '14',
-    addressdetails: '1',
+    lng: String(lng),
   });
-  const result = await fetchNominatim(`${NOMINATIM_URL}/reverse?${params}`);
-  const label = result.display_name || '';
+  const response = await fetch(`${API_BASE}/fields/geocode/reverse?${params}`);
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Location lookup failed');
+  }
+
+  const label = data.locationName || `${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}`;
   responseCache.set(cacheKey, label);
   return label;
 }

@@ -7,10 +7,13 @@ const {
 
 const router = express.Router();
 
+router.get('/geocode/search', fieldController.searchLocation);
+router.get('/geocode/reverse', fieldController.reverseLocation);
+
 router.post('/detect', validateDetectRequest, fieldController.detect);
 router.get('/', fieldController.getAll);
 router.post('/', validateParcelPayload, fieldController.create);
 router.put('/:id', validateParcelPayload, fieldController.update);
 router.delete('/:id', fieldController.remove);
 
-module.exports = router
+module.exports = router;

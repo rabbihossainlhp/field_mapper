@@ -1,9 +1,34 @@
 const fieldService = require('../services/field.service');
+const geocodeService = require('../services/geocode.service');
 
 const fieldController = {
   async detect(req, res, next) {
     try {
       res.status(200).json(await fieldService.detectBoundary(req.body));
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async searchLocation(req, res, next) {
+    try {
+      const q = req.query.q || '';
+      const results = await geocodeService.search(q);
+      res.status(200).json(results);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async reverseLocation(req, res, next) {
+    try {
+      const lat = Number(req.query.lat);
+      const lng = Number(req.query.lng);
+      if (Number.isNaN(lat) || Number.isNaN(lng)) {
+        return res.status(400).json({ error: 'Valid numeric lat and lng query params required' });
+      }
+      const result = await geocodeService.reverse(lat, lng);
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

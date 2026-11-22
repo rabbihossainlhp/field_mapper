@@ -3,7 +3,6 @@ const { buildStarterFieldPolygon, calculateMetrics } = require('../utils/geoUtil
 
 const fieldService = {
   async detectBoundary({ lat, lng, zoom = 17 }) {
-    // Replace this starter box with satellite image + edge/segmentation integration.
     const geojson = buildStarterFieldPolygon(lat, lng, zoom);
     return { geojson, metrics: calculateMetrics(geojson) };
   },
@@ -12,16 +11,17 @@ const fieldService = {
     return parcelModel.findAll();
   },
 
-  async createParcel({ name, category = 'Fallow', geojson }) {
+  async createParcel({ name, category = 'Fallow', geojson, locationName = '' }) {
     return parcelModel.create({
       name: name.trim(),
       category,
+      locationName,
       geojson,
       metrics: calculateMetrics(geojson),
     });
   },
 
-  async updateParcel(id, { name, category, geojson }) {
+  async updateParcel(id, { name, category, geojson, locationName }) {
     const existing = await parcelModel.findById(id);
     if (!existing) return null;
 
@@ -29,6 +29,7 @@ const fieldService = {
     return parcelModel.update(id, {
       name: name ? name.trim() : existing.name,
       category: category || existing.category,
+      locationName: locationName !== undefined ? locationName : existing.locationName || '',
       geojson: nextGeojson,
       metrics: calculateMetrics(nextGeojson),
     });
