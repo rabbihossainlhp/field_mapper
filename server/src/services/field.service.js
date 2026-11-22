@@ -1,9 +1,12 @@
 const parcelModel = require('../models/parcel.model');
-const { buildStarterFieldPolygon, calculateMetrics } = require('../utils/geoUtils');
+const {
+  detectVisionBoundary,
+  calculateMetrics,
+} = require('../utils/geoUtils');
 
 const fieldService = {
   async detectBoundary({ lat, lng, zoom = 17 }) {
-    const geojson = buildStarterFieldPolygon(lat, lng, zoom);
+    const geojson = await detectVisionBoundary(lat, lng, zoom);
     return { geojson, metrics: calculateMetrics(geojson) };
   },
 

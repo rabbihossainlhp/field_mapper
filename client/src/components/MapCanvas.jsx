@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import mapLibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import * as turf from '@turf/turf';
@@ -11,6 +11,42 @@ const DEFAULT_CENTER = [90.412, 23.81];
 const BOUNDARY_SOURCE = 'field-boundary';
 const MEASURE_SOURCE = 'measure-scale-line';
 const OPEN_FREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+
+const SATELLITE_WITH_LABELS_STYLE = {
+  version: 8,
+  sources: {
+    'esri-world-imagery': {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: 'Tiles © Esri | Places © Esri & OpenStreetMap',
+    },
+    'esri-places-labels': {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      maxzoom: 19,
+    },
+  },
+  layers: [
+    {
+      id: 'esri-world-imagery',
+      type: 'raster',
+      source: 'esri-world-imagery',
+    },
+    {
+      id: 'esri-places-labels-layer',
+      type: 'raster',
+      source: 'esri-places-labels',
+      paint: { 'raster-opacity': 0.95 },
+    },
+  ],
+};
 
 function featureFromParcel(parcel) {
   if (parcel?.geojson) {
@@ -60,7 +96,7 @@ function createHandle(className, text) {
   element.className = className;
   element.textContent = text;
   element.style.cssText =
-    'display:flex;align-items:center;justify-content:center;border-radius:9999px;cursor:grab;box-shadow:0 3px 12px rgba(0,0,0,0.8);';
+    'display:flex;align-items:center;justify-content:center;border-radius:9999px;cursor:grab;box-shadow:0 3px 12px rgba(0,0,0,0.85);';
   return element;
 }
 
@@ -70,6 +106,7 @@ export default function MapCanvas({
   isDetectMode,
   isMeasuring,
   showPlaceLabels = true,
+  mapMode = 'satellite',
   onDetect,
   onMapClick,
   onGeojsonChange,
@@ -79,6 +116,7 @@ export default function MapCanvas({
   const [mapReady, setMapReady] = useState(false);
   const [measureDistance, setMeasureDistance] = useState(null);
   const [map, setMap] = useState(null);
+
   const initialFeature = featureFromParcel(parcel);
   const initialCenter = initialFeature
     ? turf.center(initialFeature).geometry.coordinates
@@ -96,6 +134,7 @@ export default function MapCanvas({
   const detectRef = useRef(onDetect);
   const mapClickRef = useRef(onMapClick);
   const geojsonChangeRef = useRef(onGeojsonChange);
+
   const handleMapRef = useCallback((instance) => {
     mapRef.current = instance;
     setMap(instance);
@@ -107,13 +146,12 @@ export default function MapCanvas({
     detectRef.current = onDetect;
     mapClickRef.current = onMapClick;
     geojsonChangeRef.current = onGeojsonChange;
-  }, [
-    isDetectMode,
-    isMeasuring,
-    onDetect,
-    onMapClick,
-    onGeojsonChange,
-  ]);
+  }, [isDetectMode, isMeasuring, onDetect, onMapClick, onGeojsonChange]);
+
+  const activeStyle = useMemo(
+    () => (mapMode === 'satellite' ? SATELLITE_WITH_LABELS_STYLE : OPEN_FREEMAP_STYLE),
+    [mapMode]
+  );
 
   useEffect(() => {
     if (!map) return undefined;
@@ -122,15 +160,15 @@ export default function MapCanvas({
       new maplibregl.ScaleControl({ maxWidth: 120, unit: 'metric' }),
       'bottom-left'
     );
-    const roadPopup = new maplibregl.Popup({
-      closeButton: true,
-      closeOnClick: true,
-      maxWidth: '260px',
-    });
+
     const handleClick = (event) => {
       const { lat, lng } = event.lngLat;
 
-      if (measuringRef.current && measurePointsRef.current && measureMarkersRef.current.length === 2) {
+      if (
+        measuringRef.current &&
+        measurePointsRef.current &&
+        measureMarkersRef.current.length === 2
+      ) {
         const idx = nextTapPinRef.current % 2;
         nextTapPinRef.current += 1;
         measurePointsRef.current[idx] = [lng, lat];
@@ -151,67 +189,6 @@ export default function MapCanvas({
           km: (meters / 1000).toFixed(2),
         });
         return;
-      }
-
-      if (!detectModeRef.current && map.isStyleLoaded()) {
-        const interactiveRoadLayers = map
-          .getStyle()
-          .layers.filter(
-            (layer) =>
-              (layer.type === 'line' &&
-                /^(road|bridge|tunnel)_/.test(layer.id)) ||
-              layer.id.startsWith('highway-name')
-          )
-          .map((layer) => layer.id);
-        const roadFeatures = interactiveRoadLayers.length
-          ? map.queryRenderedFeatures(
-              [
-                [event.point.x - 6, event.point.y - 6],
-                [event.point.x + 6, event.point.y + 6],
-              ],
-              { layers: interactiveRoadLayers }
-            )
-          : [];
-        const road =
-          roadFeatures.find((feature) => {
-            const properties = feature.properties || {};
-            return (
-              properties.name ||
-              properties.name_en ||
-              properties.name_int ||
-              properties['name:en'] ||
-              properties.ref
-            );
-          }) || roadFeatures[0];
-
-        if (road) {
-          const properties = road.properties || {};
-          const name =
-            properties.name ||
-            properties.name_en ||
-            properties.name_int ||
-            properties['name:en'] ||
-            properties.ref ||
-            `${properties.subclass || properties.class || 'Road'} road`;
-          const detail = [
-            properties.class || properties.subclass,
-            properties.surface,
-          ]
-            .filter(Boolean)
-            .join(' · ');
-          const content = document.createElement('div');
-          const title = document.createElement('strong');
-          title.textContent = name;
-          content.append(title);
-          if (detail) {
-            const subtitle = document.createElement('div');
-            subtitle.textContent = detail;
-            subtitle.style.cssText = 'margin-top:4px;color:#64748b;font-size:12px;';
-            content.append(subtitle);
-          }
-          roadPopup.setDOMContent(content).setLngLat(event.lngLat).addTo(map);
-          return;
-        }
       }
 
       if (detectModeRef.current) {
@@ -263,6 +240,7 @@ export default function MapCanvas({
     };
 
     map.on('click', handleClick);
+    map.on('style.load', installMapLayers);
     if (map.isStyleLoaded()) {
       installMapLayers();
     } else {
@@ -271,24 +249,33 @@ export default function MapCanvas({
 
     return () => {
       map.off('click', handleClick);
+      map.off('style.load', installMapLayers);
       map.off('load', installMapLayers);
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
       measureMarkersRef.current.forEach((marker) => marker.remove());
       measureMarkersRef.current = [];
-      roadPopup.remove();
       mapRef.current = null;
     };
   }, [map]);
 
+  // Toggle place label layers across both satellite and street styles
   useEffect(() => {
     if (!mapReady || !map?.isStyleLoaded()) return;
-    map.getStyle().layers
-      .filter(
-        (layer) =>
-            layer.type === 'symbol' &&
-            /^(label_|place_|poi_)/.test(layer.id)
-        )
+
+    if (map.getLayer('esri-places-labels-layer')) {
+      map.setLayoutProperty(
+        'esri-places-labels-layer',
+        'visibility',
+        showPlaceLabels ? 'visible' : 'none'
+      );
+    }
+
+    map
+      .getStyle()
+      .layers.filter(
+        (layer) => layer.type === 'symbol' && /^(label_|place_|poi_)/.test(layer.id)
+      )
       .forEach((layer) => {
         map.setLayoutProperty(
           layer.id,
@@ -296,8 +283,9 @@ export default function MapCanvas({
           showPlaceLabels ? 'visible' : 'none'
         );
       });
-  }, [showPlaceLabels, mapReady, map]);
+  }, [showPlaceLabels, mapReady, map, mapMode]);
 
+  // Parcel polygon & vertex editing handles
   useEffect(() => {
     if (!mapReady || !map?.isStyleLoaded() || !map.getSource(BOUNDARY_SOURCE)) return;
 
@@ -367,7 +355,6 @@ export default function MapCanvas({
 
   // Draggable 2-Point Measurement Scale (Pins A & B)
   useEffect(() => {
-    const map = mapRef.current;
     if (!mapReady || !map?.isStyleLoaded() || !map.getSource(MEASURE_SOURCE)) return;
 
     measureMarkersRef.current.forEach((marker) => marker.remove());
@@ -379,6 +366,7 @@ export default function MapCanvas({
         features: [],
       });
       measurePointsRef.current = null;
+      setMeasureDistance(null);
       return;
     }
 
@@ -456,7 +444,7 @@ export default function MapCanvas({
       <MapcnMap
         ref={handleMapRef}
         className="absolute inset-0 h-full w-full bg-slate-900"
-        styles={{ light: OPEN_FREEMAP_STYLE, dark: OPEN_FREEMAP_STYLE }}
+        styles={{ light: activeStyle, dark: activeStyle }}
         theme="light"
         center={initialCenter}
         zoom={zoom}

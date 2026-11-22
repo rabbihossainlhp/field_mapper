@@ -1,4 +1,4 @@
-import { Plus, Minus, Compass, Ruler, MapPin } from 'lucide-react';
+import { Plus, Minus, Compass, Ruler, MapPin, Satellite } from 'lucide-react';
 
 export default function MapControls({
   onZoomIn,
@@ -8,10 +8,11 @@ export default function MapControls({
   onToggleMeasure,
   showPlaceLabels,
   onTogglePlaceLabels,
+  mapMode = 'satellite',
+  onToggleMapMode,
 }) {
   return (
     <div className="fixed bottom-4 right-4 z-20 flex flex-col items-end gap-3">
-      {/* Vertical Control Stack */}
       <div className="flex flex-col bg-[#0d141f]/95 backdrop-blur-md border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
         <button
           type="button"
@@ -39,11 +40,25 @@ export default function MapControls({
         </button>
       </div>
 
-      {/* Toggle Map Place Labels */}
+      {/* Switch Satellite / Street Map */}
+      <button
+        type="button"
+        onClick={onToggleMapMode}
+        title={mapMode === 'satellite' ? 'Switch to Street Map' : 'Switch to Satellite + Labels'}
+        className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition cursor-pointer ${
+          mapMode === 'satellite'
+            ? 'bg-emerald-500 text-slate-950'
+            : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+        }`}
+      >
+        <Satellite className="w-4 h-4" />
+      </button>
+
+      {/* Toggle Place Labels */}
       <button
         type="button"
         onClick={onTogglePlaceLabels}
-        title={showPlaceLabels ? 'Hide place labels on map' : 'Show place labels on map'}
+        title={showPlaceLabels ? 'Hide place labels' : 'Show place labels'}
         className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition cursor-pointer ${
           showPlaceLabels
             ? 'bg-sky-400 text-slate-950'

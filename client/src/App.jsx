@@ -84,6 +84,7 @@ export default function App() {
   const [isEditing, setIsEditing] = useState(true);
   const [isMeasuring, setIsMeasuring] = useState(false);
   const [showPlaceLabels, setShowPlaceLabels] = useState(true);
+  const [mapMode, setMapMode] = useState('satellite');
   const [zoom, setZoom] = useState(16);
   const [toast, setToast] = useState(null);
   const [isDetectMode, setIsDetectMode] = useState(false);
@@ -223,7 +224,7 @@ export default function App() {
       setIsDetectMode(false);
       setIsEditing(true);
       updateLocationName(draft.id, lat, lng);
-      triggerToast('Boundary detected; drag white vertices to adjust');
+      triggerToast('Boundary outlined; drag white vertices to adjust');
     } catch (error) {
       triggerToast(error.message || 'Boundary detection failed');
     }
@@ -233,7 +234,7 @@ export default function App() {
     setSearchedLocationName('');
     setIsDetectMode(true);
     setIsEditing(false);
-    triggerToast('Tap any field on the map to detect its boundary');
+    triggerToast('Tap any field on the map to auto-outline its boundary');
   };
 
   const handleSelectParcel = (parcel) => {
@@ -425,6 +426,7 @@ export default function App() {
           isDetectMode={isDetectMode}
           isMeasuring={isMeasuring}
           showPlaceLabels={showPlaceLabels}
+          mapMode={mapMode}
           onDetect={handleDetect}
           onMapClick={handleMapClick}
           onGeojsonChange={handleGeojsonChange}
@@ -456,6 +458,10 @@ export default function App() {
         onToggleMeasure={() => setIsMeasuring((prev) => !prev)}
         showPlaceLabels={showPlaceLabels}
         onTogglePlaceLabels={() => setShowPlaceLabels((prev) => !prev)}
+        mapMode={mapMode}
+        onToggleMapMode={() =>
+          setMapMode((prev) => (prev === 'satellite' ? 'street' : 'satellite'))
+        }
       />
       {toast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-emerald-400 text-slate-950 text-xs font-bold shadow-xl">
