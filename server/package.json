@@ -1,0 +1,20 @@
+{
+  "name": "field-mapper-server",
+  "version": "1.0.0",
+  "description": "Backend API for mapping and saving field boundaries",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "node --test"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@turf/turf": "^7.4.0",
+    "cors": "^2.8.6",
+    "express": "^4.22.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
